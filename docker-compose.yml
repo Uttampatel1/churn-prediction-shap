@@ -1,0 +1,8 @@
+services:
+  app:
+    build: .
+    image: churn-prediction-shap:latest
+    container_name: churn-prediction-shap
+    ports:
+      - "8501:8501"
+    restart: unless-stopped

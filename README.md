@@ -68,12 +68,33 @@ synthetic churn data ─► preprocess (one-hot + scale) ─► train ─┬─ 
                   global drivers + direction      per-customer reason codes     plain-English actions
 ```
 
+## From probability to decision: who do we actually call?
+
+An AUC doesn't tell anyone who to contact. `src/decision.py` turns scores into a
+**profit-maximising retention decision** using the campaign economics — value of a
+saved customer (`retain_rate × CLV`), the `offer_cost`, and the cost of missing a
+churner. It sweeps the probability threshold and picks the one that maximises
+expected profit, and **declines to run a campaign at all** when the offer isn't
+worth it:
+
+```python
+from src.decision import optimize_threshold
+d = optimize_threshold(y_test, proba, clv=1000, offer_cost=50, retain_rate=0.30)
+d.threshold, d.n_contacted, d.expected_profit   # e.g. 0.11, 1071, +60,150
+```
+
+The default-economics run contacts ~1,071 customers at a profit-optimal threshold
+of **0.11** (far from the naive 0.5) for an expected **+₹60k** campaign profit.
+
 ## Tech stack
 
 - **ML:** scikit-learn (LogReg, pipelines), XGBoost
 - **Explainability:** SHAP (TreeExplainer)
+- **Decisioning:** cost-based threshold optimisation (`src/decision.py`)
 - **Viz/App:** matplotlib, Plotly, Streamlit
-- **Tests:** pytest (9 tests, including a check that SHAP recovers known drivers)
+- **Observability:** structured logging via `src/logging_utils.py` (`LOG_LEVEL` env)
+- **Deploy:** `Dockerfile` + `docker-compose.yml`; GitHub Actions CI runs the suite
+- **Tests:** pytest (16 tests, including a check that SHAP recovers known drivers and that a worthless offer contacts nobody)
 
 ## Setup & run
 
@@ -98,10 +119,15 @@ pytest -q
 │   ├── data.py             # load, split, preprocessing (ColumnTransformer)
 │   ├── model.py            # LogReg + XGBoost, evaluation metrics
 │   ├── explain.py          # SHAP drivers, recommendations, reason codes
+│   ├── decision.py         # cost-based threshold optimisation
+│   ├── logging_utils.py    # structured logging + timing
 │   └── run_pipeline.py     # end-to-end report + driver plot
 ├── notebooks/
 │   └── churn_story.ipynb   # the analysis narrative
-├── tests/                  # 9 pytest tests
+├── tests/                  # 16 pytest tests
+├── Dockerfile              # containerised Streamlit app
+├── docker-compose.yml
+├── .github/workflows/ci.yml
 ├── requirements.txt
 └── .gitignore
 ```
@@ -109,7 +135,6 @@ pytest -q
 ## Possible extensions
 
 - **Uplift modeling** — target customers whose churn is *changeable*, not just likely.
-- **Cost-sensitive thresholding** tied to customer lifetime value and offer cost.
 - **Calibration** (Platt/isotonic) so probabilities are decision-ready.
 - **Monitoring** for drift in drivers and score distribution over time.
 - Export an **at-risk customer list** with reason codes to the CRM.
