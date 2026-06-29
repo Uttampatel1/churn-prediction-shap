@@ -6,6 +6,23 @@ This project predicts churn on a SaaS/telecom-style dataset and uses **SHAP** to
 
 ---
 
+<!-- portfolio-visuals -->
+
+## 🔧 How it works
+
+![Customer Churn Prediction + Explainability (SHAP) — architecture & data flow](./architecture.svg)
+
+*End-to-end flow from input to output — see [`architecture.svg`](./architecture.svg).*
+
+## 📊 Live dashboard
+
+![Customer Churn Prediction + Explainability (SHAP) — interactive Streamlit dashboard](./dashboard.png)
+
+*Real screenshot of the Streamlit app on synthetic data — no API key needed. Run it with `streamlit run dashboard.py`.*
+
+---
+
+
 ## Key findings (what the business should act on)
 
 **Top 3 churn drivers** (validated with SHAP, directions correct):
