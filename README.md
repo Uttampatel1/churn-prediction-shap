@@ -103,15 +103,52 @@ d.threshold, d.n_contacted, d.expected_profit   # e.g. 0.11, 1071, +60,150
 The default-economics run contacts ~1,071 customers at a profit-optimal threshold
 of **0.11** (far from the naive 0.5) for an expected **+₹60k** campaign profit.
 
+## Deployable: batch-scoring API
+
+A model in a notebook can't run a campaign. `src/service.py` is a **FastAPI**
+microservice that exposes the trained pipeline over HTTP — POST a batch of
+customers, get back for each one a probability, a profit-based **contact / monitor**
+decision (using the optimised threshold above), the **SHAP reason codes**, and a
+concrete **retention action**. SHAP is computed once per batch, so nightly scoring
+stays cheap.
+
+```bash
+uvicorn src.service:app --reload     # or: python -m src.service  (port 8000)
+```
+
+```bash
+curl -X POST localhost:8000/score -H "Content-Type: application/json" -d '{
+  "customers": [{
+    "customer_id": "C123", "tenure_months": 1, "monthly_charges": 95,
+    "support_tickets": 6, "num_products": 1, "is_senior": 1, "auto_pay": 0,
+    "premium_support": 0, "contract": "Month-to-month",
+    "payment_method": "Electronic check", "internet_service": "Fiber optic"
+  }]
+}'
+```
+```jsonc
+{ "threshold": 0.11, "n_scored": 1, "n_to_contact": 1, "results": [{
+  "customer_id": "C123", "churn_probability": 0.82, "decision": "contact",
+  "risk_band": "high",
+  "top_reasons": [{"feature": "tenure_months", "shap": 0.7, "effect": "+churn"}, ...],
+  "recommended_action": "Most churn happens early — invest in 30/60/90-day onboarding..."
+}]}
+```
+
+Pydantic validates every record (e.g. `is_senior` must be 0/1), so malformed input
+gets a clean `422` instead of a bad score. `GET /health` reports readiness and the
+active threshold.
+
 ## Tech stack
 
 - **ML:** scikit-learn (LogReg, pipelines), XGBoost
 - **Explainability:** SHAP (TreeExplainer)
 - **Decisioning:** cost-based threshold optimisation (`src/decision.py`)
+- **Serving:** FastAPI batch-scoring microservice (`src/service.py`) with Pydantic validation
 - **Viz/App:** matplotlib, Plotly, Streamlit
 - **Observability:** structured logging via `src/logging_utils.py` (`LOG_LEVEL` env)
 - **Deploy:** `Dockerfile` + `docker-compose.yml`; GitHub Actions CI runs the suite
-- **Tests:** pytest (16 tests, including a check that SHAP recovers known drivers and that a worthless offer contacts nobody)
+- **Tests:** pytest (24 tests, including a check that SHAP recovers known drivers, that a worthless offer contacts nobody, and that the API scores a batch + rejects bad input)
 
 ## Setup & run
 
@@ -122,6 +159,7 @@ pip install -r requirements.txt
 
 python -m src.generate_data     # synthetic data/churn.csv
 python -m src.run_pipeline      # train, evaluate, SHAP drivers, recommendations, plot
+uvicorn src.service:app         # batch-scoring REST API on :8000
 streamlit run dashboard.py      # interactive drivers + single-customer scoring
 pytest -q
 ```
@@ -137,11 +175,12 @@ pytest -q
 │   ├── model.py            # LogReg + XGBoost, evaluation metrics
 │   ├── explain.py          # SHAP drivers, recommendations, reason codes
 │   ├── decision.py         # cost-based threshold optimisation
+│   ├── service.py          # FastAPI batch-scoring microservice
 │   ├── logging_utils.py    # structured logging + timing
 │   └── run_pipeline.py     # end-to-end report + driver plot
 ├── notebooks/
 │   └── churn_story.ipynb   # the analysis narrative
-├── tests/                  # 16 pytest tests
+├── tests/                  # 24 pytest tests
 ├── Dockerfile              # containerised Streamlit app
 ├── docker-compose.yml
 ├── .github/workflows/ci.yml
